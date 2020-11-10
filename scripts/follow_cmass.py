@@ -28,18 +28,13 @@ state = 0
 low = np.array([22, 50, 50],dtype=np.uint8)
 high = np.array([36, 255, 255],dtype=np.uint8)
 
-low_creeper = np.array([90, 50, 50],dtype=np.uint8)
-high_creeper = np.array([120, 255, 255],dtype=np.uint8)
 
 def filter_color(bgr, low, high):
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(hsv, low, high)
     return mask     
 
-def filter_creeper(bgr, low_creeper, high_creeper):
-    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
-    mask_creeper = cv2.inRange(hsv, low_creeper, high_creeper)
-    return mask_creeper
+
 
 def center_of_mass(mask):
     M = cv2.moments(mask)
@@ -49,13 +44,7 @@ def center_of_mass(mask):
     cY = int(M["m01"] / M["m00"])
     return [int(cX), int(cY)]
 
-def center_of_creeper(mask_creeper):
-    M = cv2.moments(mask_creeper)
-    if M["m00"] == 0:
-        M["m00"] = 1
-    cX = int(M["m10"] / M["m00"])
-    cY = int(M["m01"] / M["m00"])
-    return [int(cX), int(cY)]
+
 
 def crosshair(img, point, size, color):
     x,y = point
@@ -73,16 +62,6 @@ def center_of_mass_region(mask, x1, y1, x2, y2):
     point = c[0]
     return mask_bgr, point
 
-def center_of_mass_creeper(mask_creeper, x1, y1, x2, y2):
-    mask_creeper_bgr = cv2.cvtColor(mask_creeper, cv2.COLOR_GRAY2BGR)
-    clipped = mask_creeper[y1:y2, x1:x2]
-    c = center_of_creeper(clipped)
-    c[0]+=x1
-    c[1]+=y1
-    crosshair(mask_creeper_bgr, c, 10, (0,0,255))
-    cv2.rectangle(mask_creeper_bgr, (x1, y1), (x2, y2), (255,0,0),2,cv2.LINE_AA)
-    heart = c[0]
-    return mask_creeper_bgr, heart
 
 def roda_todo_frame(imagem):
     print("frame")
@@ -141,15 +120,18 @@ def roda_todo_frame(imagem):
                 print(area)
         if maior_contorno_area > 1000:
             persuit = True
-        
-        dist_creeper = 0.01*(centro - heart)
-        if dist_creeper > 0.2:
-            w = 0.2
-        elif dist_creeper < -0.2:
-            w = -0.2
-        else:
-            w = dist_creeper
-
+            
+            if heart != None:
+            
+                dist_creeper = 0.01*(centro - heart[0])
+                if dist_creeper > 0.2:
+                    w = 0.2
+                elif dist_creeper < -0.2:
+                    w = -0.2
+                else:
+                    w = dist_creeper
+            
+        print(maior_contorno_area)
         cv2.imshow('mask creeper', segmentado_cor)
         cv2.waitKey(1)
         cv2.imshow('mask', mask_bgr)
@@ -179,10 +161,10 @@ if __name__=="__main__":
                 elif dist > 2.95 or dist < -2.95:
                     state = ROTATE
             else:
-                if dist > -0.1 and dist < 0.1:
-                    state = FOLLOW
-                elif dist > 2.95 or dist < -2.95:
-                    state = ROTATE
+                if dist_creeper > -0.1 and dist_creeper < 0.1:
+                    state = PERSUIT
+                elif dist_creeper > 2.95 or dist_creeper < -2.95:
+                    state = PAIRING
 
             if state == FOLLOW:
                 v = 0.3
