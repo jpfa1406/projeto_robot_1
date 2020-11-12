@@ -22,19 +22,21 @@ heart = None
 dist = None
 dist_creeper = None
 persuit = False
+close_enough = False
 w = None
 state = 0
 
+ranges = None
+minv = 0
+maxv = 10
+
 low = np.array([22, 50, 50],dtype=np.uint8)
 high = np.array([36, 255, 255],dtype=np.uint8)
-
 
 def filter_color(bgr, low, high):
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(hsv, low, high)
     return mask     
-
-
 
 def center_of_mass(mask):
     M = cv2.moments(mask)
@@ -43,8 +45,6 @@ def center_of_mass(mask):
     cX = int(M["m10"] / M["m00"])
     cY = int(M["m01"] / M["m00"])
     return [int(cX), int(cY)]
-
-
 
 def crosshair(img, point, size, color):
     x,y = point
@@ -62,7 +62,6 @@ def center_of_mass_region(mask, x1, y1, x2, y2):
     point = c[0]
     return mask_bgr, point
 
-
 def roda_todo_frame(imagem):
     print("frame")
     global cv_image
@@ -74,6 +73,7 @@ def roda_todo_frame(imagem):
     global w
     global state
     global persuit
+    global close_enough
 
     now = rospy.get_rostime()
     imgtime = imagem.header.stamp
@@ -88,20 +88,33 @@ def roda_todo_frame(imagem):
         cv_image = cv2.resize(cv_image,(cv_image.shape[1]*2,cv_image.shape[0]*2))
 
         mask = filter_color(cv_image, low, high)
+        mask = cv2.morphologyEx(mask,cv2.MORPH_OPEN,np.ones((5, 5)))
         mask_bgr, point = center_of_mass_region(mask, 20, 300, cv_image.shape[1] - 20, cv_image.shape[0] - 20) 
         centro = (cv_image.shape[1]//2)
-        dist = 0.01*(centro - point)
-        if dist > 0.2:
-            w = 0.2
-        elif dist < -0.2:
-            w = -0.2
-        else:
-            w = dist
-        
+
+        if persuit == False:
+            dist = 0.01*(centro - point)
+            if dist > 0.2:
+                w = 0.2
+            elif dist < -0.2:
+                w = -0.2
+            else:
+                w = dist
+        elif persuit == True:
+            if heart != None:
+                dist_creeper = 0.01*(centro - heart[0])
+                if dist_creeper > 0.2:
+                    w = 0.2
+                elif dist_creeper < -0.2:
+                    w = -0.2
+                else:
+                    w = dist_creeper
+            
         low_creeper = np.array([90, 50, 50],dtype=np.uint8)
         high_creeper = np.array([120, 255, 255],dtype=np.uint8) 
         cv_HSV = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
         segmentado_cor = cv2.inRange(cv_HSV, low_creeper, high_creeper)
+        segmentado_cor = cv2.morphologyEx(segmentado_cor,cv2.MORPH_CLOSE,np.ones((7, 7)))
         contornos, arvore = cv2.findContours(segmentado_cor.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE) 
         maior_contorno_area = 0
 
@@ -118,18 +131,9 @@ def roda_todo_frame(imagem):
             if area > maior_contorno_area:
                 maior_contorno_area = area
                 print(area)
-        if maior_contorno_area > 1000:
+
+        if maior_contorno_area > 800 and close_enough == False:
             persuit = True
-            
-            if heart != None:
-            
-                dist_creeper = 0.01*(centro - heart[0])
-                if dist_creeper > 0.2:
-                    w = 0.2
-                elif dist_creeper < -0.2:
-                    w = -0.2
-                else:
-                    w = dist_creeper
             
         print(maior_contorno_area)
         cv2.imshow('mask creeper', segmentado_cor)
@@ -140,9 +144,34 @@ def roda_todo_frame(imagem):
     except CvBridgeError as e:
         print('ex', e)
 
+def scaneou(dado):
+    global ranges
+    global minv
+    global maxv
+    print("Faixa valida: ", dado.range_min , " - ", dado.range_max )
+    ranges = np.array(dado.ranges).round(decimals=2)
+    print("Leituras:", ranges)
+    minv = dado.range_min 
+    maxv = dado.range_max
+
+def controle(leituras):
+    global persuit
+    global close_enough
+    if leituras is None:
+        return
+    for i in range(len(leituras)):
+        dist = leituras[i]
+        if minv < dist < maxv:
+            if dist < 0.35:
+                persuit = False
+                close_enough = True
+            elif dist > 3:
+                close_enough = False
+
 if __name__=="__main__":
     rospy.init_node("creeper")
     topico_imagem = "/camera/image/compressed"
+    recebe_scan = rospy.Subscriber("/scan", LaserScan, scaneou)
     recebedor = rospy.Subscriber(topico_imagem, CompressedImage, roda_todo_frame, queue_size=4, buff_size = 2**24)
     print("Usando ", topico_imagem)
     pub = rospy.Publisher("/cmd_vel", Twist, queue_size = 1)
@@ -154,7 +183,8 @@ if __name__=="__main__":
 
     try:
         while not rospy.is_shutdown():
-            
+
+            controle(ranges)
             if persuit == False:
                 if dist > -0.1 and dist < 0.1:
                     state = FOLLOW
@@ -168,16 +198,13 @@ if __name__=="__main__":
 
             if state == FOLLOW:
                 v = 0.3
-                vel = Twist(Vector3(v,0,0), Vector3(0,0,w))
             elif state == ROTATE:
                 v = 0
-                vel = Twist(Vector3(v,0,0), Vector3(0,0,w))
             elif state == PAIRING:
                 v = 0
-                vel = Twist(Vector3(v,0,0), Vector3(0,0,w))
             elif state == PERSUIT:
                 v = 0.3
-                vel = Twist(Vector3(v,0,0), Vector3(0,0,w))
+            vel = Twist(Vector3(v,0,0), Vector3(0,0,w))
             pub.publish(vel)
             rospy.sleep(0.1)
     except rospy.ROSInterruptException:
