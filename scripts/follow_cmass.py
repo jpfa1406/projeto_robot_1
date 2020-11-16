@@ -25,7 +25,7 @@ dist_creeper = None
 
 persuit = False
 close_enough = False
-choose_color = False
+color = 'b'
 w = None
 state = 0
 
@@ -77,7 +77,7 @@ def roda_todo_frame(imagem):
     global state
     global persuit
     global close_enough
-    global choose_color
+    global color
 
     now = rospy.get_rostime()
     imgtime = imagem.header.stamp
@@ -88,18 +88,16 @@ def roda_todo_frame(imagem):
         print("Descartando por causa do delay do frame:", delay)
         return 
     try:
-        if choose_color == False:
-            color = input('Escolha uma cor de creeper(p/o/b): ')
-            if color == 'b':
-                low_creeper = np.array([90, 50, 50],dtype=np.uint8)
-                high_creeper = np.array([120, 255, 255],dtype=np.uint8) 
-            elif color == 'p':
-                low_creeper = np.array([90, 50, 50],dtype=np.uint8)
-                high_creeper = np.array([120, 255, 255],dtype=np.uint8) 
-            elif color == '0':
-                low_creeper = np.array([90, 50, 50],dtype=np.uint8)
-                high_creeper = np.array([120, 255, 255],dtype=np.uint8) 
-            choose_color = True
+
+        if color == 'b':
+            low_creeper = np.array([85, 50, 50],dtype=np.uint8)
+            high_creeper = np.array([125, 255, 255],dtype=np.uint8) 
+        elif color == 'p':
+            low_creeper = np.array([159, 50, 50],dtype=np.uint8)
+            high_creeper = np.array([169, 255, 255],dtype=np.uint8) 
+        elif color == 'o':
+            low_creeper = np.array([0, 50, 50],dtype=np.uint8)
+            high_creeper = np.array([4, 255, 255],dtype=np.uint8) 
 
         cv_image = bridge.compressed_imgmsg_to_cv2(imagem, "bgr8")
         cv_image = cv2.resize(cv_image,(cv_image.shape[1]*2,cv_image.shape[0]*2))
@@ -126,10 +124,10 @@ def roda_todo_frame(imagem):
                     w = -0.2
                 else:
                     w = dist_creeper
-        print(low_creeper)
             
         cv_HSV = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
         segmentado_cor = cv2.inRange(cv_HSV, low_creeper, high_creeper)
+        segmentado_cor = cv2.morphologyEx(segmentado_cor,cv2.MORPH_OPEN,np.ones((5, 5)))
         segmentado_cor = cv2.morphologyEx(segmentado_cor,cv2.MORPH_CLOSE,np.ones((7, 7)))
         contornos, arvore = cv2.findContours(segmentado_cor.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE) 
         maior_contorno_area = 0
